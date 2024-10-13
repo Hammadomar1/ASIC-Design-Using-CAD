@@ -1,0 +1,28 @@
+module prbs_verify_tb();
+    bit clk;
+    bit reset;
+    bit load;
+    bit en;
+
+    bit pass;
+
+    prbs_verify dut(.clk(clk), .reset(reset), .load(load), .en(en), .pass(pass));
+    
+    initial forever #10 clk = ~clk;
+
+    initial begin
+        clk = 0;
+        reset = 1;
+        en = 0;
+        load = 0;
+        #20;
+        reset = 0;
+        #10;
+        load = 1;
+        en = 1;
+        load = 0;
+        repeat(96) #20;
+
+        $stop();
+    end    
+endmodule
