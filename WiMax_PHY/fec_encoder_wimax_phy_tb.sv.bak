@@ -1,0 +1,125 @@
+`timescale 1ns/1ps
+
+// Import package (assuming Phase1_Package equivalent exists in SystemVerilog)
+// package Phase1_Package;
+//   // Package contents would need to be converted separately
+// endpackage
+
+module fec_encoder_wimax_phy_tb();
+
+    // Interface signals
+    logic clk_50;
+    logic clk_100;
+    logic reset;
+    logic en;
+    logic [95:0] test_in_vector;
+    logic [191:0] test_out_vector;
+    logic test_in_bit;
+    logic test_out_bit;
+    logic test_out_x;
+    logic test_out_y;
+    logic out_valid;
+    logic flag;
+
+    // Clock generation parameters (assuming these were defined in the package)
+    parameter CLK_50_HALF_PERIOD = 10;  // Adjust as needed
+    parameter CLK_100_HALF_PERIOD = 5;  // Adjust as needed
+    parameter CLK_50_PERIOD = 20;       // Adjust as needed
+
+    // Constants (assuming these were defined in the package)
+    parameter [95:0] INPUT_FEC_VECTOR_CONST = 96'h0; // Replace with actual value
+    parameter [191:0] INPUT_INTERLEAVER_VECTOR_CONST = 192'h0; // Replace with actual value
+    parameter string START_SIMULATION_MSG = "Starting simulation...";
+    parameter string END_SIMULATION_MSG = "Ending simulation...";
+
+    // DUT instantiation
+    fec_encoder_wimax_phy uut (
+        .clk_50mhz(clk_50),
+        .clk_100mhz(clk_100),
+        .reset(reset),
+        .rand_out_valid(en),
+        .data_in(test_in_bit),
+        .x_output(test_out_x),
+        .y_output(test_out_y),
+        .FEC_encoder_out_valid_out(out_valid),
+        .data_out(test_out_bit)
+    );
+
+    // Clock generation
+    initial begin
+        clk_50 = 0;
+        forever #CLK_50_HALF_PERIOD clk_50 = ~clk_50;
+    end
+
+    initial begin
+        clk_100 = 1;
+        forever #CLK_100_HALF_PERIOD clk_100 = ~clk_100;
+    end
+
+    // Test vector assignment
+    assign test_in_vector = INPUT_FEC_VECTOR_CONST;
+
+    // Task to fill inputs (equivalent to fill_96_inputs_procedure)
+    task automatic fill_96_inputs;
+        input int start;
+        input int end;
+        input logic [95:0] vector;
+        output logic bit_out;
+        
+        for (int i = start; i <= end; i++) begin
+            @(posedge clk_50);
+            bit_out = vector[i];
+        end
+    endtask
+
+    // Task to fill outputs (equivalent to fill_192_outputs_procedure)
+    task automatic fill_192_outputs;
+        input int start;
+        input int end;
+        output logic [191:0] vector;
+        input logic bit_in;
+        
+        for (int i = start; i <= end; i++) begin
+            @(posedge clk_50);
+            vector[i] = bit_in;
+        end
+    endtask
+
+    // Main test process
+    initial begin
+        // Initialize signals
+        flag = 0;
+        test_out_vector = '0;
+        
+        reset = 1;
+        #(CLK_50_PERIOD + 10);
+        reset = 0;
+        en = 1;
+
+        fill_96_inputs(0, 95, test_in_vector, test_in_bit);
+        en = 0;
+        
+        wait(flag);
+        $display("Test completed");
+    end
+
+    // Output checker process
+    initial begin
+        wait(out_valid);
+        #2;
+        fill_192_outputs(0, 191, test_out_vector, test_out_bit);
+        flag = 1;
+        
+        $display(START_SIMULATION_MSG);
+        
+        if (test_out_vector != INPUT_INTERLEAVER_VECTOR_CONST) begin
+            $display("Output vector is not equal to the output in the test case provided, test failed");
+            $error("Test failed!");
+        end else begin
+            $display("Output vector is equal to the output in the test case provided, test succeeded");
+        end
+        
+        $display(END_SIMULATION_MSG);
+    end
+
+endmodule

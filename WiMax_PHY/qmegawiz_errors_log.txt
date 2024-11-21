@@ -1,0 +1,11 @@
+
+
+C:/Users/iT/Desktop/ASIC/WiMaxPHYQPSK/PLL_50_100.v
+
+Nov 20 01PM:26:14>: Megafunction PLL Intel FPGA IP v23.1 is not listed in any 
+wizard.lst file in the specified library path(s).Wizard launch aborted
+
+C:/Users/iT/Desktop/ASIC/WiMaxPHYQPSK/PLL_50_100.v
+
+Nov 20 01PM:26:22>: Megafunction PLL Intel FPGA IP v23.1 is not listed in any 
+wizard.lst file in the specified library path(s).Wizard launch aborted

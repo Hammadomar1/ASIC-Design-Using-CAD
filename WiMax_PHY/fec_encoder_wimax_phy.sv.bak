@@ -1,0 +1,209 @@
+module fec_encoder_wimax_phy (
+    input  logic clk_50mhz, clk_100mhz,
+    input  logic reset, rand_out_valid,
+    input  logic data_in,
+    output logic FEC_encoder_out_valid_out,
+    output logic x_output,
+    output logic y_output,
+    output logic data_out
+);
+
+    // Constants
+    localparam BUFFER_SIZE  = 96;
+    localparam BUFFER_SIZE2 = 192;
+
+    // Internal signals
+    logic [5:0] shift_reg;
+    logic [5:0] shift_reg2;
+    int counter_buffer_input;
+    int counter_shift_and_output;
+    logic finished_tail_flag;
+    logic FEC_encoder_out_valid;
+    logic PingPong_flag;
+
+    // State enums
+    typedef enum logic [1:0] {
+        IDLE,
+        BUFFER_FIRST_INPUT,
+        PINGPONG_STATE
+    } input_state_type;
+
+    typedef enum logic [1:0] {
+        IDLE_OUT,
+        X,
+        Y
+    } output_state_type;
+
+    input_state_type input_state_reg;
+    output_state_type output_state_reg;
+
+    // RAM signals
+    logic [7:0] address_a;
+    logic [7:0] address_b;
+    logic [0:0] data_a;
+    logic [0:0] data_b;
+    logic wren_a;
+    logic wren_b;
+    logic [0:0] q_a;
+    logic [0:0] q_b;
+
+    // RAM instance
+    FEC_DPR ram1 (
+        .address_a(address_a),
+        .address_b(address_b),
+        .clock(clk_50mhz),
+        .data_a(data_a),
+        .data_b(data_b),
+        .wren_a(wren_a),
+        .wren_b(wren_b),
+        .q_a(q_a),
+        .q_b(q_b)
+    );
+
+    // RAM signal assignments
+    assign address_a = PingPong_flag ? (counter_buffer_input + 96) : counter_buffer_input;
+    assign address_b = counter_shift_and_output;
+    assign data_a[0] = data_in;
+    assign wren_a = rand_out_valid;
+    assign FEC_encoder_out_valid_out = FEC_encoder_out_valid;
+
+    // Output logic
+    always_comb begin
+        if (PingPong_flag) begin
+            if ((output_state_reg == IDLE_OUT && finished_tail_flag) || output_state_reg == X)
+                data_out = q_b[0] ^ shift_reg[0] ^ shift_reg[3] ^ shift_reg[4] ^ shift_reg[5];
+            else if (output_state_reg == Y)
+                data_out = q_b[0] ^ shift_reg[0] ^ shift_reg[1] ^ shift_reg[3] ^ shift_reg[4];
+            else
+                data_out = 1'b0;
+        end else begin
+            if ((output_state_reg == IDLE_OUT && finished_tail_flag) || output_state_reg == X)
+                data_out = q_b[0] ^ shift_reg2[0] ^ shift_reg2[3] ^ shift_reg2[4] ^ shift_reg2[5];
+            else if (output_state_reg == Y)
+                data_out = q_b[0] ^ shift_reg2[0] ^ shift_reg2[1] ^ shift_reg2[3] ^ shift_reg2[4];
+            else
+                data_out = 1'b0;
+        end
+    end
+
+    assign FEC_encoder_out_valid = (input_state_reg == PINGPONG_STATE) ? 1'b1 : 1'b0;
+
+    // State Machine 1
+    always_ff @(posedge clk_50mhz or posedge reset) begin
+        if (reset) begin
+            counter_buffer_input <= 0;
+            shift_reg <= '0;
+            shift_reg2 <= '0;
+            counter_shift_and_output <= 0;
+            finished_tail_flag <= 1'b0;
+            PingPong_flag <= 1'b0;
+            input_state_reg <= IDLE;
+        end else begin
+            case (input_state_reg)
+                IDLE: begin
+                    if (rand_out_valid) begin
+                        counter_buffer_input <= counter_buffer_input + 1;
+                        input_state_reg <= BUFFER_FIRST_INPUT;
+                    end
+                end
+
+                BUFFER_FIRST_INPUT: begin
+                    if (counter_buffer_input >= 90 && counter_buffer_input <= 95)
+                        shift_reg[counter_buffer_input - 90] <= data_in;
+
+                    if (counter_buffer_input < BUFFER_SIZE-1) begin
+                        input_state_reg <= BUFFER_FIRST_INPUT;
+                        counter_buffer_input <= counter_buffer_input + 1;
+                    end else if (counter_buffer_input == BUFFER_SIZE-1) begin
+                        counter_buffer_input <= 0;
+                        input_state_reg <= PINGPONG_STATE;
+                        finished_tail_flag <= 1'b1;
+                        counter_shift_and_output <= counter_shift_and_output + 1;
+                        PingPong_flag <= 1'b1;
+                    end
+                end
+
+                PINGPONG_STATE: begin
+                    // Tail bits handling
+                    if (counter_buffer_input >= 90 && counter_buffer_input <= 95) begin
+                        if (!PingPong_flag)
+                            shift_reg[counter_buffer_input - 90] <= data_in;
+                        else
+                            shift_reg2[counter_buffer_input - 90] <= data_in;
+                    end
+
+                    if (counter_shift_and_output < BUFFER_SIZE && PingPong_flag) begin
+                        input_state_reg <= PINGPONG_STATE;
+                        shift_reg <= {q_b[0], shift_reg[5:1]};
+                        counter_shift_and_output <= counter_shift_and_output + 1;
+                        if (counter_buffer_input < BUFFER_SIZE-1)
+                            counter_buffer_input <= counter_buffer_input + 1;
+                    end else if (counter_shift_and_output >= BUFFER_SIZE && 
+                               counter_shift_and_output < BUFFER_SIZE2 && !PingPong_flag) begin
+                        input_state_reg <= PINGPONG_STATE;
+                        shift_reg2 <= {q_b[0], shift_reg2[5:1]};
+                        counter_shift_and_output <= counter_shift_and_output + 1;
+                        if (counter_buffer_input < BUFFER_SIZE-1)
+                            counter_buffer_input <= counter_buffer_input + 1;
+                    end else if (counter_shift_and_output == BUFFER_SIZE2) begin
+                        input_state_reg <= PINGPONG_STATE;
+                        counter_shift_and_output <= 0;
+                        counter_buffer_input <= counter_buffer_input + 1;
+                    end
+
+                    // Return to idle condition
+                    if (!rand_out_valid && (counter_shift_and_output == 96 || 
+                                          counter_shift_and_output == 192)) begin
+                        counter_shift_and_output <= 0;
+                        input_state_reg <= IDLE;
+                    end
+
+                    if (counter_buffer_input == BUFFER_SIZE-1) begin
+                        PingPong_flag <= ~PingPong_flag;
+                        counter_buffer_input <= 0;
+                        if (counter_shift_and_output < BUFFER_SIZE2-1)
+                            counter_shift_and_output <= counter_shift_and_output + 1;
+                        else
+                            counter_shift_and_output <= 0;
+                    end
+
+                    if (counter_shift_and_output == 191)
+                        counter_shift_and_output <= 0;
+                end
+            endcase
+        end
+    end
+
+    // State Machine 2
+    always_ff @(posedge clk_100mhz or posedge reset) begin
+        if (reset) begin
+            output_state_reg <= IDLE_OUT;
+        end else begin
+            if (finished_tail_flag) begin
+                case (output_state_reg)
+                    IDLE_OUT: begin
+                        if (counter_shift_and_output == 1)
+                            output_state_reg <= Y;
+                    end
+
+                    X: begin
+                        if (counter_shift_and_output <= BUFFER_SIZE2)
+                            output_state_reg <= Y;
+                    end
+
+                    Y: begin
+                        if (!FEC_encoder_out_valid && 
+                            (counter_shift_and_output == BUFFER_SIZE+1 || 
+                             counter_shift_and_output == BUFFER_SIZE2+1))
+                            output_state_reg <= IDLE_OUT;
+                        else if (counter_shift_and_output < BUFFER_SIZE2 && 
+                                FEC_encoder_out_valid)
+                            output_state_reg <= X;
+                    end
+                endcase
+            end
+        end
+    end
+
+endmodule
+

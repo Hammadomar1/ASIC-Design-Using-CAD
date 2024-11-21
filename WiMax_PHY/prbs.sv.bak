@@ -1,0 +1,35 @@
+module prbs(
+    input  logic        data_in,
+    input  logic        clk,
+    input  logic        resetN,
+    input  logic        load,
+    input  logic        en,
+    input  logic [1:15] seed,
+    input  logic        ready_fec,
+    input  logic        valid_in,
+    output logic        data_out,
+    output logic        valid_out,
+    output logic        ready_randomizer
+);    
+    logic [1:15] r_reg;
+    logic [1:15] r_next;
+    logic        lfsrXOR;
+
+    always_ff @(posedge clk or negedge resetN) begin
+        if (resetN == 1'b0) begin
+            r_reg <= '0;
+        end else if (load == 1'b1) begin
+            r_reg <= seed;
+        end else if (en == 1'b1 && valid_in == 1'b1) begin
+            r_reg <= r_next;
+        end
+    end
+
+    always_comb begin
+        lfsrXOR = r_reg[15] ^ r_reg[14];
+        r_next = {lfsrXOR, r_reg[1:14]};
+        data_out = data_in ^ lfsrXOR;
+        valid_out = en & valid_in;
+        ready_randomizer = ready_fec;
+    end
+endmodule

@@ -1,0 +1,78 @@
+// QPSK modulator block test bench
+// Done by: ASIC team 4
+// ASIC PROJECT
+
+module qpsk_MOD_tb();
+    bit clk_50;
+    bit clk_100;
+    bit Reset_N;
+    bit data_in;
+    bit valid_interleaver; // Valid input from interleaver -->
+    bit ready_TOP_TB;      // input coming from top module test bench <--
+    bit ready_interleaver; // output ready to interleaver <--
+    bit valid_TOP_TB;     // output going to top module test bench -->
+    logic signed [15:0] I_comp;
+    logic signed [15:0] Q_comp;
+
+    // Instantiate the unit under test (UUT)
+    qpsk_MOD uut (
+        .clk_50(clk_50),
+        .clk_100(clk_100),
+        .Reset_N(Reset_N),
+        .data_in(data_in),
+        .I_comp(I_comp),
+        .Q_comp(Q_comp),
+        .valid_interleaver(valid_interleaver),
+        .ready_TOP_TB(ready_TOP_TB),     
+        .ready_interleaver(ready_interleaver),
+        .valid_TOP_TB(valid_TOP_TB)     
+    );
+
+    // Clock generation (50 MHz and 100 MHz)
+   // Clock Generation
+        always #5 clk_100 = ~clk_100; // 100 MHz clock (10 ns period)
+        always #10 clk_50 = ~clk_50; // 50 MHz clock (20 ns period)
+        integer i;
+        // assign intermediate array to take the data from interleaver bit by bit
+        bit [191:0] serial_data = 192'h4B047DFA42F2A5D5F61C021A5851E9A309A24FD58086BD1E;
+
+    // Test sequence
+    initial begin
+        // Initialize inputs
+        clk_100 = 0;
+        clk_50 = 0;
+        Reset_N = 1'b0; // to enable the reset (active low)
+        data_in = 1'b0; // Initialize data_in to 0
+        #35; // Wait for a few clock cycles
+        Reset_N = 1'b1; // Release reset
+        ready_TOP_TB = 1'b1; // assuming the ready from TOP module TB came in as '1'
+        valid_interleaver = 1'b1; // assuming the valid from interleaver came in as '1'
+        // sending data serially
+        for (i = 191; i >= 0; i--) begin
+            @(posedge clk_100);
+
+            data_in = serial_data[i]; // take MSB first and shift (like shift register)
+
+            if(i % 2 == 1'b0) begin // to print output at every 2nd positive edge of clk_100
+
+            #1; // Small delay to ensure updated values are captured
+
+            $display("I_comp Q_comp: %d %d %d", I_comp, Q_comp,i);
+
+
+            //  if (valid_TOP_TB == 1'b1) begin // Only display when output is valid
+
+            //     $display("I_comp Q_comp: %d %d", I_comp, Q_comp);
+            //  end else begin
+
+            //     $display("ERROR! output valid is not asserted");
+
+            //  end
+           
+        end
+        end
+
+        #50;
+        $stop;
+    end
+endmodule
